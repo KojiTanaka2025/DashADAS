@@ -1,0 +1,17 @@
+# NVIDIA GPU overlay for a Proxmox LXC that already shares the host GPU
+# with other containers. Do not PCI-passthrough a consumer GPU into a VM
+# if other LXCs already use it.
+#
+# docker compose -f compose.yaml -f compose.gpu.yaml up --build -d
+services:
+  app:
+    image: dashadas:gpu
+    build:
+      context: .
+      args:
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu124
+    ports: !override
+      - "8080:8080"
+    environment:
+      DASHADAS_DEVICE: cuda
+    gpus: all

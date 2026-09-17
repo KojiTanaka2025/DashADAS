@@ -1,0 +1,35 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.docker-cache/
+
+# Editor / agent local config
+.cursor/
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# Model weights downloaded at runtime or build time
+*.pt
+*.onnx
+*.engine
+
+# Dashcam footage and job output must never be committed
+uploads/
+jobs/
+dashadas-jobs/
+*.mp4
+*.mov
+*.m4v
+*.mkv
+*.avi
+*.webm
+*.ts
+*.mts
+*.m2ts

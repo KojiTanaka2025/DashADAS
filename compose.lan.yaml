@@ -1,0 +1,9 @@
+# Publish port 8080 on all interfaces for a trusted LAN demo.
+# compose.yaml binds 127.0.0.1; this overlay is for a remote VM/CT.
+# Do not use this on a public IP. The app has no authentication.
+#
+# docker compose -f compose.yaml -f compose.lan.yaml up --build -d
+services:
+  app:
+    ports: !override
+      - "8080:8080"

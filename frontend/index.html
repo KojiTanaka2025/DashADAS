@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DashADAS</title>
+    <link rel="stylesheet" href="/styles.css?v=8" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <p class="eyebrow">Cloud ADAS prototype</p>
+        <h1>DashADAS</h1>
+        <p class="lede">Upload dashcam stills or video to detect pedestrians. Video is sampled at a chosen interval instead of processing every frame.</p>
+      </div>
+      <dl class="status" id="status">
+        <div><dt>Status</dt><dd id="ready">Checking</dd></div>
+        <div>
+          <dt>Device</dt>
+          <dd>
+            <select id="device-select" aria-label="Inference device" disabled>
+              <option value="cpu">cpu</option>
+            </select>
+          </dd>
+        </div>
+        <div><dt>Model</dt><dd id="model">-</dd></div>
+      </dl>
+    </header>
+
+    <main>
+      <section class="panel">
+        <form id="upload-form">
+          <label class="drop" id="drop-zone" for="file-input">
+            <input id="file-input" name="file" type="file" accept="image/jpeg,image/png,image/webp,image/bmp,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.m4v,.mkv,.avi,.webm,.ts,.mts,.m2ts" />
+            <span>Choose an image or video, or drop it here</span>
+            <small>Images up to 12MB / videos up to 1GB. MP4, MOV, MKV, WebM, and similar formats</small>
+          </label>
+          <div class="video-options" id="video-options">
+            <label>Interval
+              <select id="interval-sec">
+                <option value="0.0333333333">30 fps</option>
+                <option value="0.5">0.5 s</option>
+                <option value="1" selected>1 s</option>
+                <option value="2">2 s</option>
+                <option value="5">5 s</option>
+              </select>
+            </label>
+            <label>Max frames
+              <input id="max-frames" type="number" min="1" max="1000" value="300" />
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" id="sample-btn">Sample image</button>
+            <button type="button" id="sample-video-btn">Sample video</button>
+            <button type="submit" id="detect-btn" disabled>Detect</button>
+          </div>
+        </form>
+        <p class="hint" id="message">For dashcam clips, start with a 1 second interval and 300 frames max. Increase the interval for longer videos.</p>
+        <div class="progress" id="progress" hidden>
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+      </section>
+
+      <section class="stage">
+        <div class="meta" id="meta">
+          <span id="count">Pedestrians 0</span>
+          <span id="timing">-</span>
+          <span id="size">-</span>
+        </div>
+        <div class="timeline" id="timeline">
+          <div class="hit-strip" id="hit-strip"></div>
+          <div class="timeline-controls">
+            <button type="button" id="play-btn" disabled>Play</button>
+            <button type="button" id="prev-frame">Prev</button>
+            <input id="frame-slider" type="range" min="0" max="0" value="0" />
+            <button type="button" id="next-frame">Next</button>
+            <label class="check">
+              <input id="persons-only" type="checkbox" />
+              Frames with people only
+            </label>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="view"></canvas>
+          <p class="empty" id="empty">No image yet</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js?v=8"></script>
+  </body>
+</html>

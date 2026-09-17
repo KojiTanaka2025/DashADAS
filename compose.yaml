@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    image: dashadas:cpu
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DASHADAS_MODEL: yolo11n.pt
+      DASHADAS_CONF: "0.25"
+      DASHADAS_MAX_VIDEO_BYTES: "1073741824"
+      DASHADAS_JOBS_DIR: /tmp/dashadas-jobs
+    restart: unless-stopped
