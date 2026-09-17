@@ -8,6 +8,10 @@ RUN apt-get update \
         libgomp1 \
         libxcb1 \
         curl \
+        ffmpeg \
+        libc++1 \
+        libc++abi1 \
+        libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/backend/requirements.txt
@@ -23,10 +27,6 @@ RUN pip install --no-cache-dir --upgrade pip \
     && python -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
 
 COPY samples /app/samples
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY backend /app/backend
 COPY frontend /app/frontend
 

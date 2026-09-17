@@ -1,0 +1,12 @@
+# Mount a local QAIRT/QNN SDK (QNN/<version>/) for CPU emulation.
+# The SDK is proprietary and must not be copied into the image or Git.
+#
+# QNN environment (Linux amd64), after ./scripts/convert-qnn-yolo.sh:
+#   docker compose -f compose.yaml -f compose.lan.yaml -f compose.qnn.yaml up --build -d
+#
+# On a GPU guest, compose.gpu.yaml can replace compose.lan.yaml if CUDA
+# should stay in the Device menu. That is optional; QNN does not need a GPU.
+services:
+  app:
+    volumes:
+      - ./QNN:/app/QNN:ro

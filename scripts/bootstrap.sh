@@ -149,6 +149,11 @@ else
 fi
 
 cd "$INSTALL_DIR"
+# Optional QNN overlay: only when a Linux QNN SDK is already on this guest.
+# Conversion (./scripts/convert-qnn-yolo.sh) is a separate QNN-environment step.
+if [[ -f compose.qnn.yaml && -d QNN ]] && find QNN -name 'libQnnCpu.so' -print -quit | grep -q .; then
+  COMPOSE_FILES+=( -f compose.qnn.yaml )
+fi
 need_root docker compose "${COMPOSE_FILES[@]}" up --build -d
 
 echo "Waiting for http://127.0.0.1:8080/api/health ..."

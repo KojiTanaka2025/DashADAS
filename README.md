@@ -1,6 +1,6 @@
 # DashADAS
 
-A **Linux** pedestrian-detection service with a **Web UI**. Docker on the Linux host runs YOLO on CPU or an NVIDIA GPU; you open the UI in a browser on the LAN (`http://HOST:8080`) and upload a dashcam still or video. The page draws bounding boxes.
+A **Linux** pedestrian-detection service with a **Web UI**. Docker on the Linux host runs YOLO on CPU, an NVIDIA GPU, or Qualcomm QNN CPU emulation; you open the UI in a browser on the LAN (`http://HOST:8080`) and upload a dashcam still or video. The page draws bounding boxes.
 
 This is a **lab / LinkedIn demo**, not a production vehicle ADAS. There is no control loop, no real-time guarantee, and no authentication.
 
@@ -114,7 +114,13 @@ curl -fsSL https://raw.githubusercontent.com/KojiTanaka2025/DashADAS/main/script
 
 Or copy `scripts/bootstrap.sh` and run it as root.
 
-## Local Docker (Mac / CPU)
+## Run environments
+
+Pick **one** environment. Each has its own compose command. The Web UI Device menu only lists backends that environment actually provides.
+
+### Docker (CPU)
+
+Use this for a laptop or a CPU-only Linux guest. Inference is PyTorch on CPU.
 
 ```bash
 git clone https://github.com/KojiTanaka2025/DashADAS.git
@@ -124,13 +130,56 @@ docker compose up --build
 
 Then open [http://localhost:8080](http://localhost:8080). On Apple Silicon this is CPU inference only.
 
-## GPU Compose (when CUDA is visible)
+On a remote Linux VM or LXC, publish port 8080 on the LAN:
+
+```bash
+docker compose -f compose.yaml -f compose.lan.yaml up --build -d
+```
+
+The Device menu shows `cpu`.
+
+### CUDA
+
+Use this on a Linux amd64 guest where `nvidia-smi` already works. Inference is PyTorch on the NVIDIA GPU.
 
 ```bash
 docker compose -f compose.yaml -f compose.gpu.yaml up --build -d
 ```
 
-The header **Device** menu switches between `cpu` and `cuda` at runtime.
+The Device menu shows `cpu` and `cuda`. Use **30 fps** video here, on short clips.
+
+Do not mix this command with the QNN overlay unless you also followed the QNN steps below.
+
+### QNN
+
+Qualcomm QNN **CPU emulation** of the same pedestrian model. This checks that the QNN graph runs; it is not Hexagon DSP timing and it is not a GPU path.
+
+**Host:** Linux amd64 only (Ubuntu 22.04 / 24.04 or Debian 12 / 13). macOS cannot convert or run QNN (`libQnnCpu.so` is ELF).
+
+1. Start **Docker (CPU)** or **CUDA** on that Linux host once, so `dashadas:cpu` or `dashadas:gpu` exists.
+2. Copy the QAIRT/QNN SDK into `QNN/<version>/` (see `QNN/README.md`). Do not commit it.
+3. Convert YOLO11n (uses that Docker image, Python 3.12):
+
+```bash
+chmod +x scripts/qnn-env.sh scripts/convert-qnn-yolo.sh
+./scripts/convert-qnn-yolo.sh
+```
+
+4. Start the QNN environment and choose **qnn (CPU emu)** in the Device menu:
+
+```bash
+docker compose -f compose.yaml -f compose.lan.yaml -f compose.qnn.yaml up --build -d
+```
+
+The Device menu shows `cpu` and `qnn`. QNN does not need a GPU.
+
+To keep CUDA on a GPU guest as well, replace `compose.lan.yaml` with `compose.gpu.yaml` after the convert step. That is optional.
+
+#### Snapdragon Ride (scope)
+
+Japanese OEM ADAS DCUs often use **Snapdragon Ride**. On those SoCs, the heavy perception CNN typically runs on the **Hexagon HTP** through **QAIRT / QNN** (quantized context binary, `libQnnHtp.so`), sometimes still via SNPE on older programs.
+
+This repo is a **lab look at that family**, not a Ride port. It converts the same class of ONNX graph with the QAIRT tools and runs it on the **x86 QNN CPU backend** (`libQnnCpu.so`) so the graph and post-process can be checked without an SA-series board. It does **not** claim HTP performance, ISO 26262, QNX, or in-vehicle integration.
 
 ## Architecture
 
@@ -148,7 +197,7 @@ flowchart LR
 | Serving | FastAPI + Uvicorn, one worker |
 | Video | ffmpeg frame sampling, background jobs |
 | UI | Static HTML/JS, canvas boxes |
-| Runtime | Docker; CPU PyTorch or CUDA wheels |
+| Runtime | Docker; CPU PyTorch, CUDA wheels, or QNN CPU emulation |
 
 ## Video settings
 
@@ -164,4 +213,4 @@ Uploads are capped at 12 MB for images and 1 GB for video.
 
 ## Disclaimer
 
-DashADAS is a cloud-style **perception demo**. It does not steer, brake, or certify a vehicle. Timing numbers are for lab comparison of CPU vs GPU, not for safety claims.
+DashADAS is a cloud-style **perception demo**. It does not steer, brake, or certify a vehicle. Timing numbers are for lab comparison of CPU, GPU, and QNN CPU emulation, not for safety claims. The QNN path shows familiarity with the QAIRT conversion/runtime used around Snapdragon Ride; it is not a Snapdragon Ride DCU implementation.

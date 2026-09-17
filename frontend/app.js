@@ -453,6 +453,9 @@ function deviceLabel(name, payload) {
     const gpu = payload.gpu_name ? payload.gpu_name.replace(/^NVIDIA GeForce /, "") : "GPU";
     return `cuda (${gpu})`;
   }
+  if (name === "qnn") {
+    return "qnn (CPU emu)";
+  }
   return name;
 }
 

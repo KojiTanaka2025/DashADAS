@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 from PIL import Image, ImageOps
 from ultralytics import YOLO
 
+from backend.qnn_sdk import find_converted_model, find_qnn_sdk, qnn_status
+from backend.qnn_yolo import QnnCpuYolo
 from backend.video import (
     create_job,
     ensure_sample_video,
@@ -43,12 +45,13 @@ ALLOWED_IMAGE_TYPES = {
 }
 
 model: YOLO | None = None
+qnn_model: QnnCpuYolo | None = None
 device = "cpu"
 infer_lock = threading.Lock()
 
 
 class DeviceRequest(BaseModel):
-    device: str = Field(..., description="cpu or cuda")
+    device: str = Field(..., description="cpu, cuda, or qnn")
 
 
 def cuda_available() -> bool:
@@ -75,11 +78,16 @@ def available_devices() -> list[str]:
     devices = ["cpu"]
     if cuda_available():
         devices.append("cuda")
+    if qnn_status()["usable"]:
+        devices.append("qnn")
     return devices
 
 
 def pick_device() -> str:
     requested = os.environ.get("DASHADAS_DEVICE", "auto").strip().lower()
+    usable_qnn = qnn_status()["usable"]
+    if requested in {"qnn"}:
+        return "qnn" if usable_qnn else "cpu"
     if requested in {"cpu"}:
         return "cpu"
     if requested in {"cuda", "gpu"}:
@@ -103,13 +111,31 @@ def warmup_model() -> None:
     )
 
 
+def ensure_qnn() -> QnnCpuYolo:
+    global qnn_model
+    if qnn_model is None:
+        qnn_model = QnnCpuYolo()
+    return qnn_model
+
+
 def apply_device(name: str) -> str:
     global device
     requested = (name or "").strip().lower()
-    if requested not in {"cpu", "cuda"}:
-        raise HTTPException(status_code=400, detail="Device must be cpu or cuda")
+    if requested not in {"cpu", "cuda", "qnn"}:
+        raise HTTPException(status_code=400, detail="Device must be cpu, cuda, or qnn")
     if requested == "cuda" and not cuda_available():
         raise HTTPException(status_code=409, detail="CUDA is not available on this host")
+    if requested == "qnn":
+        status = qnn_status()
+        if not status["usable"]:
+            raise HTTPException(status_code=409, detail=status["reason"] or "QNN is not usable")
+        with infer_lock:
+            try:
+                ensure_qnn()
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            device = requested
+        return device
     with infer_lock:
         device = requested
         if model is not None:
@@ -128,6 +154,14 @@ def load_image(data: bytes) -> Image.Image:
 
 
 def detect_persons(image: Image.Image) -> dict:
+    if device == "qnn":
+        with infer_lock:
+            try:
+                runner = ensure_qnn()
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            return runner.detect(image)
+
     if model is None:
         raise HTTPException(status_code=503, detail="Model is not loaded yet")
 
@@ -219,7 +253,14 @@ async def lifespan(_app: FastAPI):
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     device = pick_device()
     model = YOLO(MODEL_NAME)
-    warmup_model()
+    if device == "qnn":
+        try:
+            ensure_qnn()
+        except Exception:
+            device = "cpu"
+            warmup_model()
+    else:
+        warmup_model()
     yield
 
 
@@ -228,14 +269,18 @@ app = FastAPI(title="DashADAS", lifespan=lifespan)
 
 @app.get("/api/health")
 def health() -> dict:
+    qnn = qnn_status()
+    qnn["model"] = str(find_converted_model(find_qnn_sdk()) or "")
+    ready = model is not None if device != "qnn" else qnn_model is not None
     return {
         "ok": True,
-        "model": MODEL_NAME,
+        "model": MODEL_NAME if device != "qnn" else (qnn["model"] or MODEL_NAME),
         "device": device,
         "devices": available_devices(),
         "cuda_available": cuda_available(),
         "gpu_name": gpu_name(),
-        "ready": model is not None,
+        "qnn": qnn,
+        "ready": ready,
         "video": True,
         "max_video_mb": MAX_VIDEO_BYTES // (1024 * 1024),
     }

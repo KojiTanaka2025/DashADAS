@@ -33,3 +33,7 @@ dashadas-jobs/
 *.ts
 *.mts
 *.m2ts
+
+# Qualcomm QNN / QAIRT SDK (proprietary; never commit)
+/QNN/*
+!/QNN/README.md
