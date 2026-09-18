@@ -5,6 +5,7 @@
 
 namespace dashadas {
 
+/* Pad color 114 and the -0.1 rounding match the Python letterbox in backend/yolo_decode.py. */
 Letterbox letterbox_rgb(const uint8_t *rgb, int width, int height, int size) {
   Letterbox out;
   const float scale = std::min(static_cast<float>(size) / static_cast<float>(height),

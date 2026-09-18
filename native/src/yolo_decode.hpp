@@ -6,6 +6,7 @@
 
 namespace dashadas {
 
+/* raw is (C, A) with C = 4 + classes. Only COCO person (class 0) is kept. */
 std::vector<DashadasDetection> decode_yolo_persons(const float *raw,
                                                    int channels,
                                                    int anchors,

@@ -52,6 +52,7 @@ install(TARGETS dashadas_perception
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/dashadas DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES API.md README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/dashadas_perception.pc.in

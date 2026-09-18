@@ -36,6 +36,7 @@ void set_create_error(const std::string &msg) {
 
 }  // namespace
 
+/* Opaque C handle: one detector instance, one backend, one mutex. */
 struct DashadasPerception {
   DashadasDevice device = DASHADAS_DEVICE_QNN;
   float conf = 0.25f;
@@ -66,6 +67,7 @@ const char *dashadas_last_create_error(void) {
   return g_create_error.c_str();
 }
 
+/* Only QNN is wired; CPU/CUDA stay in the enum so the public ABI can grow later. */
 DashadasPerception *dashadas_create(DashadasDevice device, const DashadasConfig *config) {
   DashadasConfig local;
   dashadas_config_init(&local);
@@ -129,6 +131,7 @@ int dashadas_detect(DashadasPerception *ctx,
   }
 
   std::lock_guard<std::mutex> lock(ctx->mu);
+  /* Letterbox first; inference_ms below excludes this pre-process. */
   const dashadas::Letterbox input = dashadas::letterbox_rgb(rgb, width, height, ctx->input_size);
   std::vector<float> raw;
   int channels = 0;

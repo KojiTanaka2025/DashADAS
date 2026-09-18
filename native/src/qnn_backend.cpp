@@ -30,6 +30,7 @@ enum ModelError {
   MODEL_NO_ERROR = 0
 };
 
+/* Layout must match qnn_wrapper_api::GraphInfo_t in the converted model .so. */
 struct GraphInfo {
   Qnn_GraphHandle_t graph;
   char *graphName;
@@ -150,6 +151,8 @@ void silent_qnn_log(const char *fmt, QnnLog_Level_t level, uint64_t timestamp, v
   (void)args;
 }
 
+/* libQnnCpu.so needs LLVM libc++ / libunwind. Changing LD_LIBRARY_PATH after
+   process start does not help dlopen, so load those SONAMEs first. */
 void preload_runtime_deps() {
   const char *sonames[] = {"libc++.so.1", "libc++abi.so.1", "libunwind.so.1", nullptr};
   for (int i = 0; sonames[i] != nullptr; ++i) {
@@ -170,6 +173,8 @@ class QnnBackend final : public Backend {
  public:
   ~QnnBackend() override { shutdown(); }
 
+  /* SampleApp sequence: dlopen backend → getProviders → log/backend/device/context
+     → dlopen model → composeGraphs → graphFinalize → allocate IO tensors. */
   int init(const DashadasConfig &config, std::string *error) {
     sdk_root_ = config.qnn_sdk_root ? config.qnn_sdk_root : "";
     model_path_ = config.qnn_model ? config.qnn_model : "";
@@ -314,6 +319,7 @@ class QnnBackend final : public Backend {
     return DASHADAS_OK;
   }
 
+  /* Converter rewrote the ONNX input to NHWC; feeding NCHW produces garbage boxes. */
   int infer_nhwc(const Letterbox &input, std::vector<float> *output, int *channels, int *anchors) override {
     Qnn_ClientBuffer_t *inbuf = tensor_client(&inputs_[0]);
     const size_t bytes = input.nhwc.size() * sizeof(float);

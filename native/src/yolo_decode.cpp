@@ -60,7 +60,7 @@ std::vector<DashadasDetection> decode_yolo_persons(const float *raw,
                                                    float pad_y,
                                                    float conf,
                                                    float iou) {
-  /* Layout is (1, C, A) with C = 4 + classes. */
+  /* Layout is (C, A): cx, cy, w, h, then class scores. Boxes are still in letterbox pixels. */
   std::vector<float> x1s;
   std::vector<float> y1s;
   std::vector<float> x2s;

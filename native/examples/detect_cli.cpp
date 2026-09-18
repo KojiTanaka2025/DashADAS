@@ -1,3 +1,4 @@
+/* CLI over the C API: load an image, print person boxes. See native/API.md. */
 #include "dashadas/perception.h"
 
 #include <cstdio>

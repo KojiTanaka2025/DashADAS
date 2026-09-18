@@ -9,6 +9,7 @@
 
 namespace dashadas {
 
+/* Internal inference plugin. Public callers never see this type. */
 class Backend {
  public:
   virtual ~Backend() = default;

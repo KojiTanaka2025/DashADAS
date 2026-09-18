@@ -68,6 +68,7 @@ function formatTime(sec) {
   return `${minutes}:${seconds}`;
 }
 
+/* Model execute time from the API (inference_ms), not ffmpeg or letterbox. */
 function formatFrameMs(ms) {
   const n = Number(ms);
   if (!Number.isFinite(n)) return "—";
@@ -89,6 +90,7 @@ function setFrameMeta({ pedestrians, inferenceMs, width, height, timeSec }) {
   }
 }
 
+/* HUD in image pixels so it scales with the canvas, not the CSS layout. */
 function drawFrameTime(image, inferenceMs) {
   const text = formatFrameMs(inferenceMs);
   const caption = "FRAME TIME";

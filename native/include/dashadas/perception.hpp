@@ -1,5 +1,11 @@
 #pragma once
 
+/*
+ * Header-only C++ wrapper around the C ABI in perception.h.
+ * The process still links libdashadas_perception.so; this type only owns the
+ * C handle and converts detections to std::vector.
+ */
+
 #include "dashadas/perception.h"
 
 #include <stdexcept>
@@ -39,6 +45,7 @@ class Perception {
 
   ~Perception() { dashadas_destroy(ctx_); }
 
+  /* Caps at 256 boxes, matching a typical dashcam person count. */
   std::vector<DashadasDetection> detect(const uint8_t *rgb,
                                         int width,
                                         int height,
@@ -56,6 +63,7 @@ class Perception {
   const char *model_name() const { return dashadas_model_name(ctx_); }
   const char *last_error() const { return dashadas_last_error(ctx_); }
 
+  /* Escape hatch for C-only callees that need the raw handle. */
   DashadasPerception *c_handle() const { return ctx_; }
 
  private:

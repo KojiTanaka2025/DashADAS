@@ -210,7 +210,7 @@ Build it on the Linux QNN guest (not macOS):
 ./scripts/build-native.sh
 ```
 
-That produces `native/build/libdashadas_perception.so`. Link with `-ldashadas_perception` and pass packed RGB frames to `dashadas_detect` / `dashadas::Perception::detect`. Details and a sample client are in `native/README.md`.
+That produces `native/build/libdashadas_perception.so`. Link with `-ldashadas_perception` and pass packed RGB frames to `dashadas_detect` / `dashadas::Perception::detect`. The API contract is `native/API.md`; a sample client is in `native/README.md`.
 
 ## Video settings
 
