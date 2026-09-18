@@ -162,14 +162,41 @@ button:disabled {
 
 .meta {
   display: none;
-  gap: 16px;
-  margin-bottom: 12px;
+  gap: 18px;
+  margin: 0 0 12px;
   color: var(--muted);
   font-size: 13px;
 }
 
 .meta.is-shown {
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.meta div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.meta dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.meta dd {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta [hidden] {
+  display: none !important;
+}
+
+#timing {
+  color: var(--accent);
 }
 
 .canvas-wrap {

@@ -198,6 +198,19 @@ flowchart LR
 | Video | ffmpeg frame sampling, background jobs |
 | UI | Static HTML/JS, canvas boxes |
 | Runtime | Docker; CPU PyTorch, CUDA wheels, or QNN CPU emulation |
+| Native lib | `libdashadas_perception.so` (C ABI) on Linux amd64; see `native/README.md` |
+
+## Native C++ library
+
+Other C++ programs can call the same QNN person detector without going through Python. The public surface is a C ABI in `native/include/dashadas/perception.h`, plus a header-only C++ wrapper `perception.hpp`.
+
+Build it on the Linux QNN guest (not macOS):
+
+```bash
+./scripts/build-native.sh
+```
+
+That produces `native/build/libdashadas_perception.so`. Link with `-ldashadas_perception` and pass packed RGB frames to `dashadas_detect` / `dashadas::Perception::detect`. The API contract is `native/API.md`; a sample client is in `native/README.md`.
 
 ## Video settings
 
