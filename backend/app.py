@@ -15,11 +15,13 @@ from pydantic import BaseModel, Field
 from PIL import Image, ImageOps
 from ultralytics import YOLO
 
+from backend.lane_calib import calibrate_from_frames
 from backend.qnn_sdk import find_converted_model, find_qnn_sdk, qnn_status
 from backend.qnn_yolo import QnnCpuYolo
 from backend.video import (
     create_job,
     ensure_sample_video,
+    extract_frames,
     get_frame_path,
     get_job,
     is_video_upload,
@@ -33,6 +35,15 @@ SAMPLES_DIR = ROOT / "samples"
 MODEL_NAME = os.environ.get("DASHADAS_MODEL", "yolo11n.pt")
 CONF_THRESHOLD = float(os.environ.get("DASHADAS_CONF", "0.25"))
 PERSON_CLASS_ID = 0
+# COCO classes used for distance labels after calibration (QNN path stays person-only).
+DETECT_CLASS_IDS = [0, 2, 3, 5, 7]  # person, car, motorcycle, bus, truck
+COCO_LABELS = {
+    0: "person",
+    2: "car",
+    3: "motorcycle",
+    5: "bus",
+    7: "truck",
+}
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_VIDEO_BYTES = int(os.environ.get("DASHADAS_MAX_VIDEO_BYTES", str(1024 * 1024 * 1024)))
 JOBS_DIR = Path(os.environ.get("DASHADAS_JOBS_DIR", "/tmp/dashadas-jobs"))
@@ -103,7 +114,7 @@ def warmup_model() -> None:
     warmup = Image.new("RGB", (64, 64), color=(0, 0, 0))
     model.predict(
         warmup,
-        classes=[PERSON_CLASS_ID],
+        classes=DETECT_CLASS_IDS,
         conf=CONF_THRESHOLD,
         device=device,
         save=False,
@@ -154,6 +165,7 @@ def load_image(data: bytes) -> Image.Image:
 
 
 def detect_persons(image: Image.Image) -> dict:
+    # QNN converted graph is person-only; CPU/CUDA use the wider DETECT_CLASS_IDS set.
     if device == "qnn":
         with infer_lock:
             try:
@@ -169,7 +181,7 @@ def detect_persons(image: Image.Image) -> dict:
         started = time.perf_counter()
         results = model.predict(
             image,
-            classes=[PERSON_CLASS_ID],
+            classes=DETECT_CLASS_IDS,
             conf=CONF_THRESHOLD,
             device=device,
             save=False,
@@ -182,9 +194,10 @@ def detect_persons(image: Image.Image) -> dict:
     if result.boxes is not None:
         for box in result.boxes:
             xyxy = box.xyxy[0].tolist()
+            class_id = int(box.cls[0]) if box.cls is not None else PERSON_CLASS_ID
             detections.append(
                 {
-                    "label": "person",
+                    "label": COCO_LABELS.get(class_id, "object"),
                     "score": round(float(box.conf[0]), 4),
                     "bbox": [round(v, 1) for v in xyxy],
                 }
@@ -354,6 +367,37 @@ def detect_video_sample(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     job = start_video_job(sample_path, "demo-pedestrians.mp4", interval_sec, max_frames)
     return public_job(job)
+
+
+@app.post("/api/calibrate-video")
+async def calibrate_video(
+    file: UploadFile = File(...),
+    interval_sec: float = Form(0.2),
+    max_frames: int = Form(90),
+) -> dict:
+    """Lane-only calibration. Separate from Detect — no YOLO inference."""
+    interval_sec, max_frames = clamp_video_options(interval_sec, max_frames)
+    filename = file.filename or "calibrate.mp4"
+    if not is_video_upload(filename, file.content_type):
+        raise HTTPException(
+            status_code=415,
+            detail="Please upload a video such as MP4, MOV, MKV, or WebM",
+        )
+
+    work = JOBS_DIR / f"calib-{os.getpid()}-{threading.get_ident()}"
+    video_path = work / ("source" + (Path(filename).suffix.lower() or ".mp4"))
+    frames_dir = work / "frames"
+    try:
+        await save_upload(file, video_path, MAX_VIDEO_BYTES)
+        paths = extract_frames(video_path, frames_dir, interval_sec, max_frames)
+        images = [Image.open(path).convert("RGB") for path in paths]
+        return calibrate_from_frames(images)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:300]) from exc
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 @app.get("/api/jobs/{job_id}")

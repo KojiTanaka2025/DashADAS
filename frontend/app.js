@@ -5,6 +5,8 @@ const dropZone = document.querySelector("#drop-zone");
 const form = document.querySelector("#upload-form");
 const sampleBtn = document.querySelector("#sample-btn");
 const sampleVideoBtn = document.querySelector("#sample-video-btn");
+const calibrateBtn = document.querySelector("#calibrate-btn");
+const clearCalibBtn = document.querySelector("#clear-calib-btn");
 const detectBtn = document.querySelector("#detect-btn");
 const message = document.querySelector("#message");
 const canvas = document.querySelector("#view");
@@ -19,6 +21,9 @@ const sizeEl = document.querySelector("#size");
 const videoOptions = document.querySelector("#video-options");
 const intervalSec = document.querySelector("#interval-sec");
 const maxFrames = document.querySelector("#max-frames");
+const cameraHeightInput = document.querySelector("#camera-height");
+const fovHInput = document.querySelector("#fov-h");
+const calibStatusEl = document.querySelector("#calib-status");
 const progress = document.querySelector("#progress");
 const progressBar = document.querySelector("#progress-bar");
 const timeline = document.querySelector("#timeline");
@@ -29,6 +34,8 @@ const nextFrameBtn = document.querySelector("#next-frame");
 const playBtn = document.querySelector("#play-btn");
 const personsOnly = document.querySelector("#persons-only");
 
+const CALIB_STORAGE_KEY = "dashadas_calib_v1";
+
 let selectedFile = null;
 let videoJob = null;
 let viewIndex = 0;
@@ -36,6 +43,7 @@ let drawToken = 0;
 let playing = false;
 let playHandle = 0;
 let lastPlayTick = 0;
+let calibration = null;
 
 function isVideo(file) {
   return Boolean(file) && (file.type.startsWith("video/") || VIDEO_EXT.test(file.name));
@@ -60,6 +68,87 @@ function setBusy(busy) {
   detectBtn.disabled = busy || !selectedFile;
   sampleBtn.disabled = busy;
   sampleVideoBtn.disabled = busy;
+  calibrateBtn.disabled = busy || !selectedFile || !isVideo(selectedFile);
+  clearCalibBtn.disabled = busy || !calibration;
+}
+
+function cameraHeightM() {
+  const n = Number(cameraHeightInput.value);
+  return Number.isFinite(n) && n > 0 ? n : 1.4;
+}
+
+function fovHDeg() {
+  const n = Number(fovHInput.value);
+  return Number.isFinite(n) && n > 0 ? n : 120;
+}
+
+function loadCalibration() {
+  try {
+    const raw = sessionStorage.getItem(CALIB_STORAGE_KEY);
+    calibration = raw ? JSON.parse(raw) : null;
+  } catch {
+    calibration = null;
+  }
+  renderCalibrationStatus();
+}
+
+function saveCalibration(payload) {
+  calibration = payload;
+  if (payload) {
+    sessionStorage.setItem(CALIB_STORAGE_KEY, JSON.stringify(payload));
+  } else {
+    sessionStorage.removeItem(CALIB_STORAGE_KEY);
+  }
+  renderCalibrationStatus();
+  clearCalibBtn.disabled = !calibration;
+}
+
+function renderCalibrationStatus() {
+  if (!calibration || !calibration.calibrated) {
+    calibStatusEl.textContent = "Not calibrated";
+    calibStatusEl.classList.remove("is-ready");
+    return;
+  }
+  const vp = calibration.vanishing_point;
+  calibStatusEl.textContent = `Calibrated (VP ${vp.x.toFixed(0)}, ${vp.y.toFixed(0)})`;
+  calibStatusEl.classList.add("is-ready");
+}
+
+function scaledVanishingPoint(imageWidth, imageHeight) {
+  if (!calibration || !calibration.calibrated) return null;
+  const cw = calibration.image && calibration.image.width;
+  const ch = calibration.image && calibration.image.height;
+  if (!cw || !ch) return null;
+  const aspectCalib = cw / ch;
+  const aspectNow = imageWidth / imageHeight;
+  if (Math.abs(aspectCalib - aspectNow) > 0.08) return null;
+  return {
+    x: calibration.vanishing_point.x * (imageWidth / cw),
+    y: calibration.vanishing_point.y * (imageHeight / ch),
+  };
+}
+
+/* Pinhole + flat road: Z ≈ h * fy / (v_contact - v_horizon). */
+function estimateDistanceM(bbox, imageWidth, imageHeight) {
+  const vp = scaledVanishingPoint(imageWidth, imageHeight);
+  if (!vp) return null;
+  const h = calibration.camera_height_m || cameraHeightM();
+  const fov = ((calibration.fov_h_deg || fovHDeg()) * Math.PI) / 180;
+  const fx = imageWidth / 2 / Math.tan(fov / 2);
+  const fy = fx;
+  const vContact = bbox[3];
+  if (vContact <= vp.y + 1) return null;
+  const z = (h * fy) / (vContact - vp.y);
+  if (!Number.isFinite(z) || z <= 0 || z > 300) return null;
+  return z;
+}
+
+function detectionLabel(det, imageWidth, imageHeight) {
+  const cls = det.label || "object";
+  const score = `${(det.score * 100).toFixed(0)}%`;
+  const dist = estimateDistanceM(det.bbox, imageWidth, imageHeight);
+  if (dist == null) return `${cls} ${score}`;
+  return `${cls} ${score}  ${dist.toFixed(1)} m`;
 }
 
 function formatTime(sec) {
@@ -88,6 +177,26 @@ function setFrameMeta({ pedestrians, inferenceMs, width, height, timeSec }) {
     stampItem.hidden = false;
     stampEl.textContent = formatTime(timeSec);
   }
+}
+
+function drawVanishingPoint(image) {
+  const vp = scaledVanishingPoint(image.naturalWidth, image.naturalHeight);
+  if (!vp) return;
+  const size = Math.max(10, Math.round(image.naturalWidth / 80));
+  ctx.save();
+  ctx.strokeStyle = "#5ad6ff";
+  ctx.fillStyle = "#5ad6ff";
+  ctx.lineWidth = Math.max(2, Math.round(image.naturalWidth / 500));
+  ctx.beginPath();
+  ctx.moveTo(vp.x - size, vp.y);
+  ctx.lineTo(vp.x + size, vp.y);
+  ctx.moveTo(vp.x, vp.y - size);
+  ctx.lineTo(vp.x, vp.y + size);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(vp.x, vp.y, Math.max(3, size * 0.28), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /* HUD in image pixels so it scales with the canvas, not the CSS layout. */
@@ -131,7 +240,7 @@ function drawDetections(image, detections, inferenceMs) {
     const [x1, y1, x2, y2] = det.bbox;
     const width = x2 - x1;
     const height = y2 - y1;
-    const label = `person ${(det.score * 100).toFixed(0)}%`;
+    const label = detectionLabel(det, image.naturalWidth, image.naturalHeight);
     ctx.strokeStyle = "#d6ff3f";
     ctx.strokeRect(x1, y1, width, height);
     const textWidth = ctx.measureText(label).width;
@@ -140,10 +249,11 @@ function drawDetections(image, detections, inferenceMs) {
     ctx.fillStyle = "#d6ff3f";
     ctx.fillText(label, x1 + 5, Math.max(0, y1 - 20));
   }
+  drawVanishingPoint(image);
   drawFrameTime(image, inferenceMs);
 }
 
-function showStill(imageUrl, payload) {
+function showStill(imageUrl, payload, options = {}) {
   stopPlayback();
   playBtn.disabled = true;
   timeline.classList.remove("is-shown");
@@ -157,10 +267,12 @@ function showStill(imageUrl, payload) {
       height: payload.image.height,
     });
     drawDetections(image, payload.detections, payload.inference_ms);
+    if (options.silent) return;
     if (payload.detections.length === 0) {
-      setMessage("No pedestrians were detected. Try another image.");
+      setMessage("No people or vehicles were detected. Try another image.");
     } else {
-      setMessage(`Detected ${payload.detections.length} pedestrian(s).`);
+      const withDist = calibration && calibration.calibrated ? " Distances use the session calibration." : "";
+      setMessage(`Detected ${payload.detections.length} object(s).${withDist}`);
     }
   };
   image.onerror = () => setMessage("Failed to display the image.", true);
@@ -275,7 +387,7 @@ function updateVideoProgress(job) {
   progressBar.style.width = `${Math.round(ratio * 100)}%`;
   if (job.status === "running" || job.status === "queued") {
     setMessage(
-      `Processing video… ${job.processed} / ${total} frames (${job.person_frames} with people)`
+      `Processing video… ${job.processed} / ${total} frames (${job.person_frames} with detections)`
     );
   }
 }
@@ -294,7 +406,7 @@ async function pollVideoJob(jobId) {
       progressBar.style.width = "100%";
       const summary = [
         `${job.frames.length} frames processed`,
-        `${job.person_frames} with people`,
+        `${job.person_frames} with detections`,
         `${job.person_detections} detections`,
       ];
       if (job.video && job.video.duration_sec) {
@@ -375,14 +487,59 @@ async function detectSampleVideo() {
 function rememberFile(file) {
   selectedFile = file;
   detectBtn.disabled = !file;
+  calibrateBtn.disabled = !file || !isVideo(file);
   videoOptions.classList.toggle("is-shown", isVideo(file));
   if (file) {
     setMessage(
       isVideo(file)
-        ? `${file.name} selected. Check the interval, then press Detect.`
+        ? `${file.name} selected. Use Calibrate for lanes, or Detect for objects.`
         : `${file.name} selected. Press Detect.`
     );
   }
+}
+
+async function calibrateVideo(file) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("interval_sec", "0.2");
+  body.append("max_frames", "90");
+  setMessage("Calibrating from highway-style lane markings (no object detect)…");
+  progress.hidden = false;
+  progressBar.style.width = "15%";
+  const response = await fetch("/api/calibrate-video", { method: "POST", body });
+  progressBar.style.width = "90%";
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(errorDetail(payload, "Calibration failed"));
+  }
+  if (!payload.calibrated) {
+    saveCalibration(null);
+    setMessage(payload.message || "Calibration did not complete.", true);
+    progress.hidden = true;
+    return;
+  }
+  saveCalibration({
+    calibrated: true,
+    vanishing_point: payload.vanishing_point,
+    image: payload.image,
+    camera_height_m: cameraHeightM(),
+    fov_h_deg: fovHDeg(),
+    good_frames: payload.good_frames,
+    stability: payload.stability,
+  });
+  if (payload.preview_jpeg_base64) {
+    showStill(
+      `data:image/jpeg;base64,${payload.preview_jpeg_base64}`,
+      {
+        detections: [],
+        inference_ms: 0,
+        image: payload.image,
+      },
+      { silent: true }
+    );
+  }
+  setMessage(payload.message || "Calibration complete.");
+  progress.hidden = true;
 }
 
 fileInput.addEventListener("change", () => {
@@ -448,6 +605,41 @@ sampleVideoBtn.addEventListener("click", async () => {
   } finally {
     setBusy(false);
   }
+});
+
+calibrateBtn.addEventListener("click", async () => {
+  if (!selectedFile || !isVideo(selectedFile)) {
+    setMessage("Select a video with clear highway-style lane markings to calibrate.", true);
+    return;
+  }
+  setBusy(true);
+  try {
+    await calibrateVideo(selectedFile);
+  } catch (error) {
+    setMessage(error.message, true);
+    progress.hidden = true;
+  } finally {
+    setBusy(false);
+  }
+});
+
+clearCalibBtn.addEventListener("click", () => {
+  saveCalibration(null);
+  setMessage("Calibration cleared for this session.");
+});
+
+cameraHeightInput.addEventListener("change", () => {
+  if (!calibration || !calibration.calibrated) return;
+  calibration.camera_height_m = cameraHeightM();
+  sessionStorage.setItem(CALIB_STORAGE_KEY, JSON.stringify(calibration));
+  if (videoJob) showVideoFrame();
+});
+
+fovHInput.addEventListener("change", () => {
+  if (!calibration || !calibration.calibrated) return;
+  calibration.fov_h_deg = fovHDeg();
+  sessionStorage.setItem(CALIB_STORAGE_KEY, JSON.stringify(calibration));
+  if (videoJob) showVideoFrame();
 });
 
 frameSlider.addEventListener("input", () => {
@@ -558,4 +750,5 @@ deviceSelect.addEventListener("change", async () => {
   }
 });
 
+loadCalibration();
 loadHealth();
