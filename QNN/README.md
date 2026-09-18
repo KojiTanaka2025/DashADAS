@@ -23,6 +23,10 @@ QNN/
 
 If the zip extracts as `qairt/2.50.0.260828/`, copy that inner version folder here.
 
+**Important:** never `rsync --delete` from a Mac checkout into a guest that already has
+`QNN/<version>/` unless you protect those paths. `scripts/install-remote.sh --sync`
+excludes and protects `QNN/2.*/` and `QNN/models/` so the proprietary SDK is not wiped.
+
 ## Convert and run (Linux amd64 only)
 
 On the Linux host, build Docker (CPU) or CUDA first so `dashadas:cpu` or `dashadas:gpu` exists. Then:

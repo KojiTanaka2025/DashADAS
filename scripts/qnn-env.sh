@@ -42,6 +42,7 @@ export QAIRT_SDK_ROOT="$QNN_SDK_ROOT"
 # Qualcomm envsetup.sh concatenates PYTHONPATH/LD_LIBRARY_PATH; with `set -u` they must exist.
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+export SNPE_ROOT="${SNPE_ROOT:-}"
 # shellcheck disable=SC1091
 source "$QNN_SDK_ROOT/bin/envsetup.sh"
 echo "Using QNN_SDK_ROOT=$QNN_SDK_ROOT"

@@ -136,6 +136,14 @@ if [[ "$SYNC" -eq 1 ]]; then
     --exclude '__pycache__/' \
     --exclude '.DS_Store' \
     --exclude '*.mp4' \
+    --exclude '*.pt' \
+    --exclude '*.onnx' \
+    --exclude '*.engine' \
+    --exclude 'models/*.pt' \
+    --exclude 'QNN/2.*/' \
+    --exclude 'QNN/models/' \
+    --filter 'P QNN/2.*/' \
+    --filter 'P QNN/models/' \
     "$ROOT/" "$TARGET:DashADAS/"
 else
   echo "The host will clone https://github.com/KojiTanaka2025/DashADAS.git"

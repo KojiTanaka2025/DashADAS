@@ -262,6 +262,7 @@ def public_job(job: dict) -> dict:
                 "detections": frame["detections"],
                 "inference_ms": frame["inference_ms"],
                 "image": frame["image"],
+                **({"lanes": frame["lanes"]} if frame.get("lanes") else {}),
             }
             for frame in job["frames"]
         ],
@@ -311,6 +312,8 @@ def process_video_job(job_id: str, detect_fn) -> None:
                 "inference_ms": result["inference_ms"],
                 "image": result["image"],
             }
+            if result.get("lanes"):
+                frame["lanes"] = result["lanes"]
             with JOBS_LOCK:
                 job["frames"].append(frame)
                 job["processed"] = index + 1
