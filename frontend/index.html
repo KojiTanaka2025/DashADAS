@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DashADAS</title>
-    <link rel="stylesheet" href="/styles.css?v=9" />
+    <link rel="stylesheet" href="/styles.css?v=11" />
   </head>
   <body>
     <header class="top">
@@ -62,11 +62,24 @@
       </section>
 
       <section class="stage">
-        <div class="meta" id="meta">
-          <span id="count">Pedestrians 0</span>
-          <span id="timing">-</span>
-          <span id="size">-</span>
-        </div>
+        <dl class="meta" id="meta">
+          <div>
+            <dt>Pedestrians</dt>
+            <dd id="count">0</dd>
+          </div>
+          <div>
+            <dt>Frame time</dt>
+            <dd id="timing">—</dd>
+          </div>
+          <div id="stamp-item" hidden>
+            <dt>Time</dt>
+            <dd id="stamp">—</dd>
+          </div>
+          <div>
+            <dt>Size</dt>
+            <dd id="size">—</dd>
+          </div>
+        </dl>
         <div class="timeline" id="timeline">
           <div class="hit-strip" id="hit-strip"></div>
           <div class="timeline-controls">
@@ -87,6 +100,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=9"></script>
+    <script src="/app.js?v=11"></script>
   </body>
 </html>

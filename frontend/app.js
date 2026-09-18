@@ -13,6 +13,8 @@ const empty = document.querySelector("#empty");
 const meta = document.querySelector("#meta");
 const countEl = document.querySelector("#count");
 const timingEl = document.querySelector("#timing");
+const stampItem = document.querySelector("#stamp-item");
+const stampEl = document.querySelector("#stamp");
 const sizeEl = document.querySelector("#size");
 const videoOptions = document.querySelector("#video-options");
 const intervalSec = document.querySelector("#interval-sec");
@@ -66,7 +68,55 @@ function formatTime(sec) {
   return `${minutes}:${seconds}`;
 }
 
-function drawDetections(image, detections) {
+function formatFrameMs(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(1)} ms`;
+}
+
+function setFrameMeta({ pedestrians, inferenceMs, width, height, timeSec }) {
+  empty.classList.add("hidden");
+  meta.classList.add("is-shown");
+  countEl.textContent = String(pedestrians);
+  timingEl.textContent = formatFrameMs(inferenceMs);
+  sizeEl.textContent = `${width} x ${height}`;
+  if (timeSec == null) {
+    stampItem.hidden = true;
+    stampEl.textContent = "—";
+  } else {
+    stampItem.hidden = false;
+    stampEl.textContent = formatTime(timeSec);
+  }
+}
+
+function drawFrameTime(image, inferenceMs) {
+  const text = formatFrameMs(inferenceMs);
+  const caption = "FRAME TIME";
+  const font = Math.max(18, Math.round(image.naturalWidth / 36));
+  const small = Math.max(11, Math.round(font * 0.42));
+  const padX = Math.max(10, Math.round(font * 0.5));
+  const padY = Math.max(8, Math.round(font * 0.32));
+  ctx.save();
+  ctx.font = `650 ${font}px sans-serif`;
+  ctx.textBaseline = "top";
+  const textW = ctx.measureText(text).width;
+  ctx.font = `600 ${small}px sans-serif`;
+  const captionW = ctx.measureText(caption).width;
+  const boxW = Math.max(textW, captionW) + padX * 2;
+  const boxH = small + font + padY * 2 + 4;
+  const x = Math.max(8, Math.round(image.naturalWidth * 0.015));
+  const y = Math.max(8, Math.round(image.naturalHeight * 0.015));
+  ctx.fillStyle = "rgba(18, 20, 23, 0.78)";
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.fillStyle = "#9aa7b4";
+  ctx.fillText(caption, x + padX, y + padY);
+  ctx.fillStyle = "#d6ff3f";
+  ctx.font = `650 ${font}px sans-serif`;
+  ctx.fillText(text, x + padX, y + padY + small + 2);
+  ctx.restore();
+}
+
+function drawDetections(image, detections, inferenceMs) {
   canvas.width = image.naturalWidth;
   canvas.height = image.naturalHeight;
   ctx.drawImage(image, 0, 0);
@@ -88,6 +138,7 @@ function drawDetections(image, detections) {
     ctx.fillStyle = "#d6ff3f";
     ctx.fillText(label, x1 + 5, Math.max(0, y1 - 20));
   }
+  drawFrameTime(image, inferenceMs);
 }
 
 function showStill(imageUrl, payload) {
@@ -97,12 +148,13 @@ function showStill(imageUrl, payload) {
   progress.hidden = true;
   const image = new Image();
   image.onload = () => {
-    empty.classList.add("hidden");
-    meta.classList.add("is-shown");
-    countEl.textContent = `Pedestrians ${payload.detections.length}`;
-    timingEl.textContent = `${payload.inference_ms} ms`;
-    sizeEl.textContent = `${payload.image.width} x ${payload.image.height}`;
-    drawDetections(image, payload.detections);
+    setFrameMeta({
+      pedestrians: payload.detections.length,
+      inferenceMs: payload.inference_ms,
+      width: payload.image.width,
+      height: payload.image.height,
+    });
+    drawDetections(image, payload.detections, payload.inference_ms);
     if (payload.detections.length === 0) {
       setMessage("No pedestrians were detected. Try another image.");
     } else {
@@ -154,12 +206,14 @@ function showVideoFrame() {
   const image = new Image();
   image.onload = () => {
     if (token !== drawToken) return;
-    empty.classList.add("hidden");
-    meta.classList.add("is-shown");
-    countEl.textContent = `Pedestrians ${frame.detections.length}`;
-    timingEl.textContent = `${formatTime(frame.time_sec)} / ${frame.inference_ms} ms`;
-    sizeEl.textContent = `${frame.image.width} x ${frame.image.height}`;
-    drawDetections(image, frame.detections);
+    setFrameMeta({
+      pedestrians: frame.detections.length,
+      inferenceMs: frame.inference_ms,
+      width: frame.image.width,
+      height: frame.image.height,
+      timeSec: frame.time_sec,
+    });
+    drawDetections(image, frame.detections, frame.inference_ms);
   };
   image.onerror = () => setMessage("Failed to display the frame.", true);
   image.src = `${frame.url}?t=${Date.now()}`;
