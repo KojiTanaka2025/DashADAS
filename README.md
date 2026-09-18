@@ -1,25 +1,28 @@
 # DashADAS
 
-A **Linux** pedestrian-detection service with a **Web UI**. Docker on the Linux host runs YOLO on CPU, an NVIDIA GPU, or Qualcomm QNN CPU emulation; you open the UI in a browser on the LAN (`http://HOST:8080`) and upload a dashcam still or video. The page draws bounding boxes.
+A **Linux** dashcam perception demo with a **Web UI**. Docker on the Linux host runs YOLO11n on CPU, an NVIDIA GPU, or Qualcomm QNN CPU emulation; you open the UI in a browser on the LAN (`http://HOST:8080`), upload a still or video, and the page draws boxes. Optionally calibrate from highway-style lane markings to estimate ground distance (pinhole + flat-road model).
 
 This is a **lab / LinkedIn demo**, not a production vehicle ADAS. There is no control loop, no real-time guarantee, and no authentication.
 
 Repository: [KojiTanaka2025/DashADAS](https://github.com/KojiTanaka2025/DashADAS)
 
-![DashADAS Web UI: sample video with pedestrian boxes, inference on a remote NVIDIA GPU](docs/demo-ui.jpg)
+![DashADAS Web UI: sample video with person and vehicle boxes, frame time, and camera settings on a remote NVIDIA GPU](docs/demo-ui.jpg)
 
-*Screenshot: the **Web UI** in a browser at `http://HOST:8080`. Detection runs in Docker on the Linux GPU host.*
+*Screenshot: the **Web UI** at `http://HOST:8080` on CUDA. Object overlays, per-frame inference time, camera height / FOV inputs, and calibration status (session-only).*
 
 ## What it does
 
-- Detects **people only** with a pretrained YOLO11n model
+- Detects **people and vehicles** (person, car, motorcycle, bus, truck) with pretrained YOLO11n on CPU/CUDA; the QNN path stays **person-only**
 - Overlays boxes in the browser (the server returns JSON, not burned-in images)
+- Shows **frame time** (model inference ms) in the meta row and on the canvas
 - Samples video at a chosen interval, including **30 fps** on a GPU host
-- Plays the result in the Web UI (Play / Pause, timeline)
+- Plays the result in the Web UI (Play / Pause, timeline; playback **stops at the end**, no loop)
+- Optional **Calibrate** (separate from Detect): stable white/yellow lane paint → vanishing point; then boxes can show estimated distance in meters
+- Camera height and horizontal FOV (default **120°**) are editable; calibration is kept in the browser session only
 - **Sample image** uses the public Ultralytics `bus.jpg`
 - **Sample video** fetches a public street clip with pedestrians, trims it to 8 seconds, then detects and plays it
 
-Open the UI, click **Sample video**, wait for the progress bar, then watch the 30 fps overlay.
+Open the UI, click **Sample video**, wait for the progress bar, then watch the overlay. For distance labels, calibrate first on a clear highway-style lane clip.
 
 ## Requirements
 
@@ -185,21 +188,23 @@ This repo is a **lab look at that family**, not a Ride port. It converts the sam
 
 ```mermaid
 flowchart LR
-  browser["Browser on the LAN"] -->|"upload image or video"| api["FastAPI in Docker"]
-  api --> yolo["YOLO11n person class"]
-  yolo -->|"JSON boxes"| browser
+  browser["Browser on the LAN"] -->|"upload / calibrate / detect"| api["FastAPI in Docker"]
+  api --> yolo["YOLO11n objects"]
+  api --> lanes["Lane VP calibration"]
+  yolo -->|"JSON boxes + frame time"| browser
+  lanes -->|"session calib"| browser
   browser --> canvas["Canvas overlay"]
 ```
 
 | Piece | Choice |
 | --- | --- |
-| Model | YOLO11n, COCO `person` only |
+| Model | YOLO11n; CPU/CUDA: person + vehicles; QNN: person only |
 | Serving | FastAPI + Uvicorn, one worker |
 | Video | ffmpeg frame sampling, background jobs |
-| UI | Static HTML/JS, canvas boxes |
+| UI | Static HTML/JS, canvas boxes, frame time, optional distance |
 | Runtime | Docker; CPU PyTorch, CUDA wheels, or QNN CPU emulation |
 | Native lib | `libdashadas_perception.so` (C ABI) on Linux amd64; see `native/README.md` |
-| Calibration | Optional highway-style lane vanishing point (session-only); pinhole distance labels |
+| Calibration | Highway-style lane vanishing point (session-only); pinhole distance labels |
 
 ## Native C++ library
 
@@ -215,9 +220,18 @@ That produces `native/build/libdashadas_perception.so`. Link with `-ldashadas_pe
 
 ## Video settings
 
-For a real dashcam clip, start with **1 second interval, 300 frames max**. Use **30 fps** only on GPU and on short clips. CPU can keep up with sparse sampling, not with full 30 fps dashcam.
+For a real dashcam clip, start with **1 second interval, 300 frames max**. Use **30 fps** only on GPU and on short clips. CPU can keep up with sparse sampling, not with full 30 fps dashcam. Playback stops on the last frame (no loop).
 
 Uploads are capped at 12 MB for images and 1 GB for video.
+
+## Lane calibration and distance
+
+1. Set **camera height** (m) and **horizontal FOV** (°; default 120).
+2. Select a video with clear white/yellow lane paint (motorway-like). Press **Calibrate** (not Detect).
+3. When enough stable lane frames are found, the header shows **Calibrated** and the session stores the vanishing point.
+4. Run **Detect**; boxes can show class, score, and estimated distance. Clear calibration or close the tab to reset.
+
+This uses a **pinhole** camera on a **flat road**. Distortion is not corrected. It is not for braking or steering.
 
 ## Security
 
@@ -227,4 +241,4 @@ Uploads are capped at 12 MB for images and 1 GB for video.
 
 ## Disclaimer
 
-DashADAS is a cloud-style **perception demo**. It does not steer, brake, or certify a vehicle. Timing numbers are for lab comparison of CPU, GPU, and QNN CPU emulation, not for safety claims. The QNN path shows familiarity with the QAIRT conversion/runtime used around Snapdragon Ride; it is not a Snapdragon Ride DCU implementation.
+DashADAS is a cloud-style **perception demo**. It does not steer, brake, or certify a vehicle. Timing and distance numbers are for lab comparison, not for safety claims. The QNN path shows familiarity with the QAIRT conversion/runtime used around Snapdragon Ride; it is not a Snapdragon Ride DCU implementation. Lane calibration and pinhole distance estimates assume a flat road and known FOV.

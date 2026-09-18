@@ -374,7 +374,11 @@ function playTick(now) {
       setPlaying(false);
       return;
     }
-    viewIndex = viewIndex >= frames.length - 1 ? 0 : viewIndex + 1;
+    if (viewIndex >= frames.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    viewIndex += 1;
     showVideoFrame();
   }
   playHandle = requestAnimationFrame(playTick);
