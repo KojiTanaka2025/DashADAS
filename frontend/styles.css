@@ -240,7 +240,18 @@ canvas {
   flex-wrap: wrap;
 }
 
+.camera-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .video-options label,
+.camera-options label,
 .check {
   display: flex;
   align-items: center;
@@ -249,6 +260,7 @@ canvas {
 
 .video-options select,
 .video-options input[type="number"],
+.camera-options input[type="number"],
 .timeline-controls input[type="range"] {
   background: #161a1f;
   color: var(--text);
@@ -257,8 +269,28 @@ canvas {
   font: inherit;
 }
 
-.video-options input[type="number"] {
+.video-options input[type="number"],
+.camera-options input[type="number"] {
   width: 5.5em;
+}
+
+.disclaimer {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: #161a1f;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.disclaimer strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+#calib-status.is-ready {
+  color: var(--accent);
 }
 
 .progress {

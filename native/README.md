@@ -2,7 +2,7 @@
 
 Shared library (`libdashadas_perception.so`) with a **C ABI** so other C or C++ programs can run the same YOLO11n person detector as the Python service. A header-only C++ wrapper is in `include/dashadas/perception.hpp`.
 
-**API specification:** [`API.md`](API.md) (types, functions, errors, tensor shapes, threading).
+**API specification:** [`API.md`](API.md) (types, functions, sample calls, errors, tensor shapes, threading).
 
 Build this on **Linux amd64** (the QNN guest, for example `dashadas-gpu`). Do not build it on macOS: `libQnnCpu.so` is ELF and the QAIRT SDK is not kept on the Mac.
 

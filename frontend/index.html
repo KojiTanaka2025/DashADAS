@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DashADAS</title>
-    <link rel="stylesheet" href="/styles.css?v=11" />
+    <link rel="stylesheet" href="/styles.css?v=12" />
   </head>
   <body>
     <header class="top">
       <div>
         <p class="eyebrow">Cloud ADAS prototype</p>
         <h1>DashADAS</h1>
-        <p class="lede">Upload dashcam stills or video to detect pedestrians. Video is sampled at a chosen interval instead of processing every frame.</p>
+        <p class="lede">Upload dashcam stills or video to detect people and vehicles. Optionally calibrate from highway-style lane markings to estimate ground distance.</p>
       </div>
       <dl class="status" id="status">
         <div><dt>Status</dt><dd id="ready">Checking</dd></div>
@@ -24,6 +24,7 @@
           </dd>
         </div>
         <div><dt>Model</dt><dd id="model">-</dd></div>
+        <div><dt>Calibration</dt><dd id="calib-status">Not calibrated</dd></div>
       </dl>
     </header>
 
@@ -49,13 +50,29 @@
               <input id="max-frames" type="number" min="1" max="1000" value="300" />
             </label>
           </div>
+          <div class="camera-options" id="camera-options">
+            <label>Camera height (m)
+              <input id="camera-height" type="number" min="0.5" max="3" step="0.05" value="1.40" />
+            </label>
+            <label>Horizontal FOV (°)
+              <input id="fov-h" type="number" min="40" max="170" step="1" value="120" />
+            </label>
+          </div>
           <div class="actions">
             <button type="button" id="sample-btn">Sample image</button>
             <button type="button" id="sample-video-btn">Sample video</button>
+            <button type="button" id="calibrate-btn" disabled>Calibrate</button>
+            <button type="button" id="clear-calib-btn" disabled>Clear calibration</button>
             <button type="submit" id="detect-btn" disabled>Detect</button>
           </div>
         </form>
-        <p class="hint" id="message">For dashcam clips, start with a 1 second interval and 300 frames max. Increase the interval for longer videos.</p>
+        <p class="hint" id="message">Calibrate on a clear highway-style lane clip (separate from Detect). Then Detect shows class and estimated distance when calibration is active.</p>
+        <p class="disclaimer" id="disclaimer">
+          Distance uses a <strong>pinhole camera</strong> model on a flat road. Default FOV is 120° (typical forward dashcam; editable).
+          Lane calibration needs stable white/yellow lane paint — not guardrails or curbs.
+          Calibration is kept for this browser session only. Not for braking, steering, or safety claims.
+          Wide-angle lens distortion is not corrected; curves and hills reduce accuracy.
+        </p>
         <div class="progress" id="progress" hidden>
           <div class="progress-bar" id="progress-bar"></div>
         </div>
@@ -64,7 +81,7 @@
       <section class="stage">
         <dl class="meta" id="meta">
           <div>
-            <dt>Pedestrians</dt>
+            <dt>Objects</dt>
             <dd id="count">0</dd>
           </div>
           <div>
@@ -89,7 +106,7 @@
             <button type="button" id="next-frame">Next</button>
             <label class="check">
               <input id="persons-only" type="checkbox" />
-              Frames with people only
+              Frames with detections only
             </label>
           </div>
         </div>
@@ -100,6 +117,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=11"></script>
+    <script src="/app.js?v=12"></script>
   </body>
 </html>

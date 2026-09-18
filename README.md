@@ -199,6 +199,7 @@ flowchart LR
 | UI | Static HTML/JS, canvas boxes |
 | Runtime | Docker; CPU PyTorch, CUDA wheels, or QNN CPU emulation |
 | Native lib | `libdashadas_perception.so` (C ABI) on Linux amd64; see `native/README.md` |
+| Calibration | Optional highway-style lane vanishing point (session-only); pinhole distance labels |
 
 ## Native C++ library
 
