@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from PIL import Image, ImageOps
 from ultralytics import YOLO
 
-from backend.lane_calib import calibrate_from_frames
+from backend.lane_calib import calibrate_from_frames, detect_lane_hit_from_mask
 from backend.qnn_sdk import find_converted_model, find_qnn_sdk, qnn_status
 from backend.qnn_yolo import QnnCpuYolo
 from backend.video import (
@@ -28,6 +28,7 @@ from backend.video import (
     process_video_job,
     public_job,
 )
+from backend.yolopv2 import YoloPv2Runner, weights_available as yolopv2_weights_available
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = ROOT / "frontend"
@@ -44,6 +45,13 @@ COCO_LABELS = {
     5: "bus",
     7: "truck",
 }
+# Classes each runtime can actually return (QNN graph is person-only).
+DETECT_CLASSES_BY_DEVICE = {
+    "cpu": [COCO_LABELS[i] for i in DETECT_CLASS_IDS],
+    "cuda": [COCO_LABELS[i] for i in DETECT_CLASS_IDS],
+    "qnn": ["person"],
+    "yolopv2": [COCO_LABELS[i] for i in DETECT_CLASS_IDS] + ["lanes"],
+}
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_VIDEO_BYTES = int(os.environ.get("DASHADAS_MAX_VIDEO_BYTES", str(1024 * 1024 * 1024)))
 JOBS_DIR = Path(os.environ.get("DASHADAS_JOBS_DIR", "/tmp/dashadas-jobs"))
@@ -57,12 +65,13 @@ ALLOWED_IMAGE_TYPES = {
 
 model: YOLO | None = None
 qnn_model: QnnCpuYolo | None = None
+yolopv2_model: YoloPv2Runner | None = None
 device = "cpu"
 infer_lock = threading.Lock()
 
 
 class DeviceRequest(BaseModel):
-    device: str = Field(..., description="cpu, cuda, or qnn")
+    device: str = Field(..., description="cpu, cuda, qnn, or yolopv2")
 
 
 def cuda_available() -> bool:
@@ -91,12 +100,16 @@ def available_devices() -> list[str]:
         devices.append("cuda")
     if qnn_status()["usable"]:
         devices.append("qnn")
+    if yolopv2_weights_available():
+        devices.append("yolopv2")
     return devices
 
 
 def pick_device() -> str:
     requested = os.environ.get("DASHADAS_DEVICE", "auto").strip().lower()
     usable_qnn = qnn_status()["usable"]
+    if requested in {"yolopv2"}:
+        return "yolopv2" if yolopv2_weights_available() else ("cuda" if cuda_available() else "cpu")
     if requested in {"qnn"}:
         return "qnn" if usable_qnn else "cpu"
     if requested in {"cpu"}:
@@ -129,13 +142,34 @@ def ensure_qnn() -> QnnCpuYolo:
     return qnn_model
 
 
+def ensure_yolopv2() -> YoloPv2Runner:
+    global yolopv2_model
+    if yolopv2_model is None:
+        torch_dev = "cuda" if cuda_available() else "cpu"
+        yolopv2_model = YoloPv2Runner(torch_device=torch_dev)
+    return yolopv2_model
+
+
 def apply_device(name: str) -> str:
     global device
     requested = (name or "").strip().lower()
-    if requested not in {"cpu", "cuda", "qnn"}:
-        raise HTTPException(status_code=400, detail="Device must be cpu, cuda, or qnn")
+    if requested not in {"cpu", "cuda", "qnn", "yolopv2"}:
+        raise HTTPException(status_code=400, detail="Device must be cpu, cuda, qnn, or yolopv2")
     if requested == "cuda" and not cuda_available():
         raise HTTPException(status_code=409, detail="CUDA is not available on this host")
+    if requested == "yolopv2":
+        if not yolopv2_weights_available():
+            raise HTTPException(
+                status_code=409,
+                detail="YOLOPv2 weights missing. Run scripts/download-yolopv2.sh on the host.",
+            )
+        with infer_lock:
+            try:
+                ensure_yolopv2()
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            device = requested
+        return device
     if requested == "qnn":
         status = qnn_status()
         if not status["usable"]:
@@ -173,6 +207,23 @@ def detect_persons(image: Image.Image) -> dict:
             except Exception as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             return runner.detect(image)
+
+    if device == "yolopv2":
+        with infer_lock:
+            try:
+                runner = ensure_yolopv2()
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            result = runner.infer(image, conf=CONF_THRESHOLD, class_ids=DETECT_CLASS_IDS)
+        width, height = image.size
+        return {
+            "model": result.model_name,
+            "device": device,
+            "inference_ms": result.inference_ms,
+            "image": {"width": width, "height": height},
+            "detections": result.detections,
+            "lanes": {"polylines": result.lane_polylines},
+        }
 
     if model is None:
         raise HTTPException(status_code=503, detail="Model is not loaded yet")
@@ -266,7 +317,13 @@ async def lifespan(_app: FastAPI):
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     device = pick_device()
     model = YOLO(MODEL_NAME)
-    if device == "qnn":
+    if device == "yolopv2":
+        try:
+            ensure_yolopv2()
+        except Exception:
+            device = "cuda" if cuda_available() else "cpu"
+            warmup_model()
+    elif device == "qnn":
         try:
             ensure_qnn()
         except Exception:
@@ -284,14 +341,28 @@ app = FastAPI(title="DashADAS", lifespan=lifespan)
 def health() -> dict:
     qnn = qnn_status()
     qnn["model"] = str(find_converted_model(find_qnn_sdk()) or "")
-    ready = model is not None if device != "qnn" else qnn_model is not None
+    if device == "qnn":
+        ready = qnn_model is not None
+        model_name = qnn["model"] or MODEL_NAME
+    elif device == "yolopv2":
+        ready = yolopv2_model is not None or yolopv2_weights_available()
+        model_name = "yolopv2.pt"
+    else:
+        ready = model is not None
+        model_name = MODEL_NAME
+    detect_classes = DETECT_CLASSES_BY_DEVICE.get(device, DETECT_CLASSES_BY_DEVICE["cpu"])
     return {
         "ok": True,
-        "model": MODEL_NAME if device != "qnn" else (qnn["model"] or MODEL_NAME),
+        "model": model_name,
         "device": device,
         "devices": available_devices(),
+        "detect_classes": detect_classes,
+        "detect_classes_by_device": {
+            name: DETECT_CLASSES_BY_DEVICE.get(name, []) for name in available_devices()
+        },
         "cuda_available": cuda_available(),
         "gpu_name": gpu_name(),
+        "yolopv2_available": yolopv2_weights_available(),
         "qnn": qnn,
         "ready": ready,
         "video": True,
@@ -375,7 +446,7 @@ async def calibrate_video(
     interval_sec: float = Form(0.2),
     max_frames: int = Form(90),
 ) -> dict:
-    """Lane-only calibration. Separate from Detect — no YOLO inference."""
+    """Lane calibration. Prefers YOLOPv2 masks when weights are present."""
     interval_sec, max_frames = clamp_video_options(interval_sec, max_frames)
     filename = file.filename or "calibrate.mp4"
     if not is_video_upload(filename, file.content_type):
@@ -391,7 +462,21 @@ async def calibrate_video(
         await save_upload(file, video_path, MAX_VIDEO_BYTES)
         paths = extract_frames(video_path, frames_dir, interval_sec, max_frames)
         images = [Image.open(path).convert("RGB") for path in paths]
-        return calibrate_from_frames(images)
+        if yolopv2_weights_available():
+            with infer_lock:
+                try:
+                    runner = ensure_yolopv2()
+                except Exception as exc:
+                    raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+                def hit_fn(image: Image.Image):
+                    result = runner.infer(image, conf=CONF_THRESHOLD, class_ids=DETECT_CLASS_IDS)
+                    return detect_lane_hit_from_mask(
+                        result.lane_mask, width=image.size[0], height=image.size[1]
+                    )
+
+                return calibrate_from_frames(images, hit_fn=hit_fn, engine="yolopv2")
+        return calibrate_from_frames(images, engine="opencv")
     except HTTPException:
         raise
     except Exception as exc:

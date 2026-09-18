@@ -78,15 +78,15 @@ def _lane_mask(bgr: np.ndarray) -> np.ndarray:
     return mask
 
 
-def detect_lane_hit(image: Image.Image | np.ndarray) -> LaneHit | None:
-    """Find left+right lane markings and their vanishing point, or None."""
-    if isinstance(image, Image.Image):
-        rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    else:
-        bgr = image
-    height, width = bgr.shape[:2]
-    mask = _lane_mask(bgr)
+def detect_lane_hit_from_mask(mask: np.ndarray, width: int | None = None, height: int | None = None) -> LaneHit | None:
+    """Fit left/right lanes and vanishing point from a binary lane mask."""
+    if mask.dtype != np.uint8:
+        mask = (mask > 0).astype(np.uint8) * 255
+    height = int(height if height is not None else mask.shape[0])
+    width = int(width if width is not None else mask.shape[1])
+    if mask.shape[0] != height or mask.shape[1] != width:
+        mask = cv2.resize(mask, (width, height), interpolation=cv2.INTER_NEAREST)
+
     edges = cv2.Canny(mask, 50, 150)
     segments = cv2.HoughLinesP(
         edges,
@@ -101,8 +101,6 @@ def detect_lane_hit(image: Image.Image | np.ndarray) -> LaneHit | None:
 
     left: list[tuple[float, float]] = []
     right: list[tuple[float, float]] = []
-    left_seg: list[tuple[float, float, float, float]] = []
-    right_seg: list[tuple[float, float, float, float]] = []
 
     for seg in segments[:, 0]:
         x1, y1, x2, y2 = map(float, seg)
@@ -120,10 +118,8 @@ def detect_lane_hit(image: Image.Image | np.ndarray) -> LaneHit | None:
         # Image y grows downward: left lane slopes negative, right positive.
         if slope < 0 and mid_x < width * 0.55:
             left.append((slope, intercept))
-            left_seg.append((x1, y1, x2, y2))
         elif slope > 0 and mid_x > width * 0.45:
             right.append((slope, intercept))
-            right_seg.append((x1, y1, x2, y2))
 
     if len(left) < 1 or len(right) < 1:
         return None
@@ -160,6 +156,18 @@ def detect_lane_hit(image: Image.Image | np.ndarray) -> LaneHit | None:
     )
 
 
+def detect_lane_hit(image: Image.Image | np.ndarray) -> LaneHit | None:
+    """Find left+right lane markings and their vanishing point, or None."""
+    if isinstance(image, Image.Image):
+        rgb = np.asarray(image.convert("RGB"), dtype=np.uint8)
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    else:
+        bgr = image
+    height, width = bgr.shape[:2]
+    mask = _lane_mask(bgr)
+    return detect_lane_hit_from_mask(mask, width=width, height=height)
+
+
 def draw_calibration_overlay(image: Image.Image, hit: LaneHit) -> Image.Image:
     rgb = np.asarray(image.convert("RGB"), dtype=np.uint8).copy()
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
@@ -173,7 +181,11 @@ def draw_calibration_overlay(image: Image.Image, hit: LaneHit) -> Image.Image:
     return Image.fromarray(out)
 
 
-def calibrate_from_frames(frames: list[Image.Image]) -> dict:
+def calibrate_from_frames(
+    frames: list[Image.Image],
+    hit_fn=None,
+    engine: str = "opencv",
+) -> dict:
     """Aggregate vanishing points across frames; complete only when stable."""
     if not frames:
         return {
@@ -181,15 +193,17 @@ def calibrate_from_frames(frames: list[Image.Image]) -> dict:
             "message": "No frames available for calibration.",
             "good_frames": 0,
             "processed_frames": 0,
+            "engine": engine,
         }
 
+    detect_fn = hit_fn or detect_lane_hit
     width, height = frames[0].size
     hits: list[LaneHit] = []
     last_hit: LaneHit | None = None
     last_image: Image.Image | None = None
 
     for image in frames:
-        hit = detect_lane_hit(image)
+        hit = detect_fn(image)
         if hit is None:
             continue
         hits.append(hit)
@@ -197,15 +211,17 @@ def calibrate_from_frames(frames: list[Image.Image]) -> dict:
         last_image = image
 
     good = len(hits)
+    engine_label = "YOLOPv2 lane masks" if engine == "yolopv2" else "highway-style lane paint"
     if good < MIN_GOOD_FRAMES:
         return {
             "calibrated": False,
             "message": (
-                f"Need clear highway-style lane markings on at least {MIN_GOOD_FRAMES} frames "
+                f"Need clear {engine_label} on at least {MIN_GOOD_FRAMES} frames "
                 f"(got {good}). Guardrails and curbs are ignored; try a straighter motorway clip."
             ),
             "good_frames": good,
             "processed_frames": len(frames),
+            "engine": engine,
             "image": {"width": width, "height": height},
         }
 
@@ -224,6 +240,7 @@ def calibrate_from_frames(frames: list[Image.Image]) -> dict:
             ),
             "good_frames": good,
             "processed_frames": len(frames),
+            "engine": engine,
             "stability": {"std_x": round(std_x, 2), "std_y": round(std_y, 2)},
             "image": {"width": width, "height": height},
         }
@@ -248,12 +265,13 @@ def calibrate_from_frames(frames: list[Image.Image]) -> dict:
     return {
         "calibrated": True,
         "message": (
-            f"Calibration complete from {good} stable highway-style lane frames. "
+            f"Calibration complete from {good} stable frames ({engine_label}). "
             "Session only — refresh clears it."
         ),
         "vanishing_point": {"x": round(vx, 1), "y": round(vy, 1)},
         "good_frames": good,
         "processed_frames": len(frames),
+        "engine": engine,
         "stability": {"std_x": round(std_x, 2), "std_y": round(std_y, 2)},
         "image": {"width": width, "height": height},
         "preview_jpeg_base64": preview_b64,

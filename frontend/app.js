@@ -227,10 +227,31 @@ function drawFrameTime(image, inferenceMs) {
   ctx.restore();
 }
 
-function drawDetections(image, detections, inferenceMs) {
+function drawLanes(lanes) {
+  if (!lanes || !lanes.polylines || !lanes.polylines.length) return;
+  const line = Math.max(2, Math.round(canvas.width / 320));
+  ctx.save();
+  ctx.strokeStyle = "rgba(90, 214, 255, 0.92)";
+  ctx.lineWidth = line;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  for (const poly of lanes.polylines) {
+    if (!poly || poly.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(poly[0][0], poly[0][1]);
+    for (let i = 1; i < poly.length; i += 1) {
+      ctx.lineTo(poly[i][0], poly[i][1]);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDetections(image, detections, inferenceMs, lanes) {
   canvas.width = image.naturalWidth;
   canvas.height = image.naturalHeight;
   ctx.drawImage(image, 0, 0);
+  drawLanes(lanes);
   const line = Math.max(2, Math.round(image.naturalWidth / 400));
   ctx.lineWidth = line;
   ctx.font = `${Math.max(14, Math.round(image.naturalWidth / 50))}px sans-serif`;
@@ -266,7 +287,7 @@ function showStill(imageUrl, payload, options = {}) {
       width: payload.image.width,
       height: payload.image.height,
     });
-    drawDetections(image, payload.detections, payload.inference_ms);
+    drawDetections(image, payload.detections, payload.inference_ms, payload.lanes);
     if (options.silent) return;
     if (payload.detections.length === 0) {
       setMessage("No people or vehicles were detected. Try another image.");
@@ -327,7 +348,7 @@ function showVideoFrame() {
       height: frame.image.height,
       timeSec: frame.time_sec,
     });
-    drawDetections(image, frame.detections, frame.inference_ms);
+    drawDetections(image, frame.detections, frame.inference_ms, frame.lanes);
   };
   image.onerror = () => setMessage("Failed to display the frame.", true);
   image.src = `${frame.url}?t=${Date.now()}`;
@@ -708,6 +729,10 @@ function deviceLabel(name, payload) {
   if (name === "qnn") {
     return "qnn (CPU emu)";
   }
+  if (name === "yolopv2") {
+    const gpu = payload.gpu_name ? payload.gpu_name.replace(/^NVIDIA GeForce /, "") : null;
+    return gpu ? `yolopv2 (${gpu})` : "yolopv2";
+  }
   return name;
 }
 
@@ -718,6 +743,24 @@ function renderDeviceSelect(payload) {
     .join("");
   deviceSelect.value = payload.device || "cpu";
   deviceSelect.disabled = available.length < 2;
+  if (payload.model) {
+    const modelEl = document.querySelector("#model");
+    if (modelEl) modelEl.textContent = payload.model;
+  }
+  renderDetectClasses(payload);
+}
+
+function renderDetectClasses(payload) {
+  const el = document.querySelector("#detect-classes");
+  if (!el) return;
+  const byDevice = payload.detect_classes_by_device || {};
+  const current = payload.device || deviceSelect.value || "cpu";
+  const list =
+    (payload.detect_classes && payload.detect_classes.length && payload.detect_classes) ||
+    byDevice[current] ||
+    [];
+  el.textContent = list.length ? list.join(", ") : "—";
+  el.title = list.length ? `Detectable on ${current}: ${list.join(", ")}` : "";
 }
 
 async function loadHealth() {

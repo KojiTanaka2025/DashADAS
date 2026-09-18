@@ -9,4 +9,7 @@ services:
       DASHADAS_CONF: "0.25"
       DASHADAS_MAX_VIDEO_BYTES: "1073741824"
       DASHADAS_JOBS_DIR: /tmp/dashadas-jobs
+      DASHADAS_YOLOPV2_WEIGHTS: /app/models/yolopv2.pt
+    volumes:
+      - ./models:/app/models:ro
     restart: unless-stopped

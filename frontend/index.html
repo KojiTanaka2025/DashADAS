@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>DashADAS</title>
-    <link rel="stylesheet" href="/styles.css?v=13" />
+    <link rel="stylesheet" href="/styles.css?v=14" />
   </head>
   <body>
     <header class="top">
       <div>
         <p class="eyebrow">Cloud ADAS prototype</p>
         <h1>DashADAS</h1>
-        <p class="lede">Upload dashcam stills or video to detect people and vehicles. Optionally calibrate from highway-style lane markings to estimate ground distance.</p>
+        <p class="lede">Upload dashcam stills or video to detect people and vehicles. Use YOLOPv2 for lane overlays, or calibrate from highway markings to estimate ground distance.</p>
       </div>
       <dl class="status" id="status">
         <div><dt>Status</dt><dd id="ready">Checking</dd></div>
@@ -22,6 +22,10 @@
               <option value="cpu">cpu</option>
             </select>
           </dd>
+        </div>
+        <div class="classes-row">
+          <dt>Classes</dt>
+          <dd id="detect-classes">—</dd>
         </div>
         <div><dt>Model</dt><dd id="model">-</dd></div>
         <div><dt>Calibration</dt><dd id="calib-status">Not calibrated</dd></div>
@@ -117,6 +121,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=13"></script>
+    <script src="/app.js?v=14"></script>
   </body>
 </html>

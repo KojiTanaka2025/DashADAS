@@ -1,23 +1,24 @@
 # DashADAS
 
-A **Linux** dashcam perception demo with a **Web UI**. Docker on the Linux host runs YOLO11n on CPU, an NVIDIA GPU, or Qualcomm QNN CPU emulation; you open the UI in a browser on the LAN (`http://HOST:8080`), upload a still or video, and the page draws boxes. Optionally calibrate from highway-style lane markings to estimate ground distance (pinhole + flat-road model).
+A **Linux** dashcam perception demo with a **Web UI**. Docker on the Linux host runs YOLO11n on CPU, an NVIDIA GPU, or Qualcomm QNN CPU emulation; optionally **YOLOPv2** for joint object + lane-line overlays. You open the UI in a browser on the LAN (`http://HOST:8080`), upload a still or video, and the page draws boxes (and lanes when using YOLOPv2). Optionally calibrate from lane markings to estimate ground distance (pinhole + flat-road model).
 
 This is a **lab / LinkedIn demo**, not a production vehicle ADAS. There is no control loop, no real-time guarantee, and no authentication.
 
 Repository: [KojiTanaka2025/DashADAS](https://github.com/KojiTanaka2025/DashADAS)
 
-![DashADAS Web UI: sample video with person and vehicle boxes, frame time, and camera settings on a remote NVIDIA GPU](docs/demo-ui.jpg)
+![DashADAS Web UI: YOLOPv2 sample video with object boxes, lane overlays, and frame time on a remote NVIDIA GPU](docs/demo-ui.jpg)
 
-*Screenshot: the **Web UI** at `http://HOST:8080` on CUDA. Object overlays, per-frame inference time, camera height / FOV inputs, and calibration status (session-only).*
+*Screenshot: the **Web UI** at `http://HOST:8080` with **YOLOPv2** on GPU. Object boxes, lane-line overlays, per-frame inference time, camera height / FOV inputs, and calibration status (session-only).*
 
 ## What it does
 
 - Detects **people and vehicles** (person, car, motorcycle, bus, truck) with pretrained YOLO11n on CPU/CUDA; the QNN path stays **person-only**
+- Optional **YOLOPv2** device (TorchScript): same object classes plus **lane-line** polylines on the canvas; Calibrate prefers YOLOPv2 lane masks when `models/yolopv2.pt` is present
 - Overlays boxes in the browser (the server returns JSON, not burned-in images)
 - Shows **frame time** (model inference ms) in the meta row and on the canvas
 - Samples video at a chosen interval, including **30 fps** on a GPU host
 - Plays the result in the Web UI (Play / Pause, timeline; playback **stops at the end**, no loop)
-- Optional **Calibrate** (separate from Detect): stable white/yellow lane paint → vanishing point; then boxes can show estimated distance in meters
+- Optional **Calibrate** (separate from Detect): YOLOPv2 lane masks when available, otherwise white/yellow paint → vanishing point; then boxes can show estimated distance in meters
 - Camera height and horizontal FOV (default **120°**) are editable; calibration is kept in the browser session only
 - **Sample image** uses the public Ultralytics `bus.jpg`
 - **Sample video** fetches a public street clip with pedestrians, trims it to 8 seconds, then detects and plays it
@@ -198,13 +199,13 @@ flowchart LR
 
 | Piece | Choice |
 | --- | --- |
-| Model | YOLO11n; CPU/CUDA: person + vehicles; QNN: person only |
+| Model | YOLO11n (CPU/CUDA/QNN) or YOLOPv2 TorchScript; QNN: person only |
 | Serving | FastAPI + Uvicorn, one worker |
 | Video | ffmpeg frame sampling, background jobs |
 | UI | Static HTML/JS, canvas boxes, frame time, optional distance |
 | Runtime | Docker; CPU PyTorch, CUDA wheels, or QNN CPU emulation |
 | Native lib | `libdashadas_perception.so` (C ABI) on Linux amd64; see `native/README.md` |
-| Calibration | Highway-style lane vanishing point (session-only); pinhole distance labels |
+| Calibration | Lane VP via YOLOPv2 masks or OpenCV paint (session-only); pinhole distance |
 
 ## Native C++ library
 
@@ -227,7 +228,7 @@ Uploads are capped at 12 MB for images and 1 GB for video.
 ## Lane calibration and distance
 
 1. Set **camera height** (m) and **horizontal FOV** (°; default 120).
-2. Select a video with clear white/yellow lane paint (motorway-like). Press **Calibrate** (not Detect).
+2. Select a video with clear lane markings (motorway-like). Press **Calibrate** (not Detect). When `models/yolopv2.pt` is present, calibration uses YOLOPv2 lane masks; otherwise OpenCV white/yellow paint.
 3. When enough stable lane frames are found, the header shows **Calibrated** and the session stores the vanishing point.
 4. Run **Detect**; boxes can show class, score, and estimated distance. Clear calibration or close the tab to reset.
 
