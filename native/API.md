@@ -42,6 +42,64 @@ dashadas_config_init(&cfg)
 
 `dashadas_destroy(NULL)` is safe.
 
+## Sample calls
+
+`rgb` is packed RGB8, `width * height * 3` bytes, no row padding. Set `QNN_SDK_ROOT` and the model path to the converted `libyolo11n.so`. Runnable copies live in `examples/sample_client.cpp` (C++) and `examples/detect_cli.cpp` (C API + image load).
+
+### C
+
+```c
+#include "dashadas/perception.h"
+
+DashadasConfig cfg;
+dashadas_config_init(&cfg);
+cfg.qnn_sdk_root = "/path/to/QNN/2.50.0.260828";
+cfg.qnn_model = "/path/to/libyolo11n.so";
+
+DashadasPerception *ctx = dashadas_create(DASHADAS_DEVICE_QNN, &cfg);
+if (ctx == NULL) {
+  fprintf(stderr, "%s\n", dashadas_last_create_error());
+  return 1;
+}
+
+DashadasDetection boxes[64];
+int n = 0;
+float ms = 0.f;
+int rc = dashadas_detect(ctx, rgb, width, height, boxes, 64, &n, &ms);
+if (rc != DASHADAS_OK) {
+  fprintf(stderr, "%s\n", dashadas_last_error(ctx));
+  dashadas_destroy(ctx);
+  return 1;
+}
+
+printf("%d person(s) in %.1f ms\n", n, ms);
+for (int i = 0; i < n; ++i) {
+  printf("person %.3f  [%.1f, %.1f, %.1f, %.1f]\n",
+         boxes[i].score, boxes[i].x1, boxes[i].y1, boxes[i].x2, boxes[i].y2);
+}
+dashadas_destroy(ctx);
+```
+
+### C++
+
+```cpp
+#include "dashadas/perception.hpp"
+
+DashadasConfig cfg = dashadas::default_config();
+cfg.qnn_sdk_root = std::getenv("QNN_SDK_ROOT");
+cfg.qnn_model = "/path/to/libyolo11n.so";
+
+dashadas::Perception det(DASHADAS_DEVICE_QNN, cfg);
+float ms = 0.f;
+std::vector<DashadasDetection> boxes = det.detect(rgb, width, height, &ms);
+for (const DashadasDetection &box : boxes) {
+  std::printf("person %.3f  [%.1f, %.1f, %.1f, %.1f]\n",
+              box.score, box.x1, box.y1, box.x2, box.y2);
+}
+```
+
+The wrapper throws `std::runtime_error` if create or detect fails.
+
 ## Types
 
 ### `DashadasDevice`
@@ -143,12 +201,7 @@ Concurrent `dashadas_detect` on the **same** handle is serialized. Use one handl
 
 ## C++ wrapper
 
-```cpp
-dashadas::Perception det(DASHADAS_DEVICE_QNN, cfg);
-std::vector<DashadasDetection> boxes = det.detect(rgb, w, h, &ms);
-```
-
-Throws `std::runtime_error` on create or detect failure. Move-only.
+`dashadas::Perception` is move-only. It owns the C handle and caps `detect` at 256 boxes. See **Sample calls** above for a complete example.
 
 ## Errors and logging
 
